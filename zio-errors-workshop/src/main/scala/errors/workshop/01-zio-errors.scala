@@ -4,6 +4,7 @@ import zio._
 import java.util.Properties
 import java.io.IOException
 import java.io.FileInputStream
+import java.io.FileNotFoundException
 
 object ZIOFailure extends ZIOAppDefault {
   trait Config
@@ -12,8 +13,11 @@ object ZIOFailure extends ZIOAppDefault {
    * EXERCISE
    *
    * Use `ZIO.fail` to fail with a string error message.
+   * The type only represents recoverable errors, since we can only act on those.
+   * Non-recoverable errors are not recoverable and thus cannot be acted upon. They
+   * are never going to effect control flow.
    */
-  def loadConfig: IO[String, Config] = TODO
+  def loadConfig: IO[String, Config] = ZIO.fail("Uh oh!")
 
   def run = loadConfig.flatMap(Console.printLine(_))
 }
@@ -23,12 +27,14 @@ object ZIOCatchAll extends ZIOAppDefault {
 
   def loadConfig: IO[String, Config] = ZIO.fail("Cannot load config")
 
+  // ZIO.fail("foo") orElse ZIO.succeed("bar")
+
   /*
    * EXERCISE
    *
    * Use `ZIO#catchAll` to catch the error and print it to the console.
    */
-  def run = loadConfig
+  def run = loadConfig.catchAll(error => Console.printLine(error))
 }
 
 object ZIODie extends ZIOAppDefault {
@@ -39,7 +45,7 @@ object ZIODie extends ZIOAppDefault {
    *
    * Use `ZIO.die` to fail with a `NullPointerException`.
    */
-  def loadConfig: IO[String, Config] = TODO
+  def loadConfig: IO[String, Config] = ZIO.die(new NullPointerException("Uh oh!"))
 
   def run = loadConfig.exit.flatMap(Console.printLine(_))
 }
@@ -58,7 +64,7 @@ object ZIOSandbox extends ZIOAppDefault {
    * Then refactor the code to use `catchAllCause`, which composes the
    * previous two functions for you.
    */
-  def run = loadConfig
+  def run = loadConfig.sandbox
 }
 
 object ZIORefinement extends ZIOAppDefault {
@@ -87,7 +93,10 @@ object ZIORefinement extends ZIOAppDefault {
    * converting some subset of `Throwable` to this error type, and ignoring
    * the rest of `Throwable`.
    */
-  def loadMyConfig: IO[ConfigNotFoundError, Config] = TODO
+  def loadMyConfig: IO[ConfigNotFoundError, Config] =
+    loadSomeConfig("config.txt", myConfigReader).refineOrDie { case _: FileNotFoundException =>
+      ConfigNotFoundError("config.txt")
+    }
 
   def run = loadMyConfig
 }
@@ -101,7 +110,7 @@ object ZIORefinementTo extends ZIOAppDefault {
    * Using `ZIO.attempt` and `ZIO#refineToOrDie`, create a constructor that
    * will only fail with recoverable errors of type `IOException`.
    */
-  def attemptIO[A](code: => A): IO[IOException, A] = TODO
+  def attemptIO[A](code: => A): IO[IOException, A] = ZIO.attempt(code).refineToOrDie[IOException]
 
   def run = attemptIO(new FileInputStream("/tmp/config.properties")).exit.flatMap(Console.printLine(_))
 }
@@ -122,14 +131,14 @@ object ZIOCause extends ZIOAppDefault {
    *
    * Use `++` to combine `error1` and `error2` sequentially.
    */
-  lazy val combinedErrors1 = TODO
+  lazy val combinedErrors1 = error1 ++ error2
 
   /*
    * EXERCISE
    *
    * Use `&&` to combine `error1` and `error2` in parallel.
    */
-  lazy val combinedErrors2 = TODO
+  lazy val combinedErrors2 = error1 && error2
 
   /*
    * EXERCISE
@@ -153,14 +162,14 @@ object ZIOZooming {
    *
    * Use `ZIO#some` to drill into the `Option` in the value channel.
    */
-  lazy val z2: IO[Option[String], Int] = z1.TODO
+  lazy val z2: IO[Option[String], Int] = z1.some
 
   /*
    * EXERCISE
    *
    * Use `ZIO#unsome` to undo the previous transformation.
    */
-  lazy val z3: IO[String, Option[Int]] = z2.TODO
+  lazy val z3: IO[String, Option[Int]] = z2.unsome
 
   val z4: IO[String, Either[Boolean, Int]] = ZIO.succeed(Right(1))
 
@@ -169,14 +178,14 @@ object ZIOZooming {
    *
    * Use `ZIO#left` to drill into the `Left` in the value channel.
    */
-  lazy val z5: IO[Either[String, Int], Boolean] = z4.TODO
+  lazy val z5: IO[Either[String, Int], Boolean] = z4.left
 
   /*
    * EXERCISE
    *
    * Use `ZIO#unleft` to undo the previous transformation.
    */
-  lazy val z6: IO[String, Either[Boolean, Int]] = z5.TODO
+  lazy val z6: IO[String, Either[Boolean, Int]] = z5.unleft
 
   val z7: IO[String, Either[Boolean, Option[Int]]] = ZIO.succeed(Right(Some(1)))
 
@@ -186,7 +195,7 @@ object ZIOZooming {
    * Use the appropriate operators to zoom into the `Int` inside `z7`. Insert
    * a type for the IO.
    */
-  lazy val z8: TODO = z7.TODO
+  lazy val z8: IO[Option[Either[Boolean, String]], Int] = z7.right.some
 
   val z9: IO[String, Either[Boolean, Option[List[Int]]]] = ZIO.succeed(Right(Some(1 :: Nil)))
 
@@ -196,12 +205,12 @@ object ZIOZooming {
    * Use the appropriate operators to zoom into the `Int` inside `z9`. Insert
    * a type for the IO.
    */
-  lazy val z10: TODO = z9.TODO
+  lazy val z10: IO[Option[Option[Either[Boolean, String]]], Int] = z9.right.some.head
 
   /*
    * EXERCISE
    *
    * Finally, undo the transformation you did to `z10`.
    */
-  lazy val z11: IO[String, Either[Boolean, Option[List[Int]]]] = (z10: Any).TODO
+  lazy val z11: IO[String, Either[Boolean, Option[List[Int]]]] = z10.unsome.map(_.toList).unsome.unright
 }

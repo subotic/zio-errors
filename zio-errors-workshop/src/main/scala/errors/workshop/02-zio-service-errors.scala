@@ -1,5 +1,9 @@
 package errors.workshop
 
+import zio._
+import java.io.FileNotFoundException
+import java.sql.SQLTransientException
+
 object file_system {
   trait FileSystem {
     import java.io.FileInputStream
@@ -11,11 +15,22 @@ object file_system {
      * type of the error should be. You are welcome to create your own error
      * type if you think this is the best solution for the problem.
      */
-    def open(path: String): TODO1[FileInputStream]
+    def open(path: String): ZIO[Scope, FileNotFoundException, FileInputStream] =
+      ZIO.acquireRelease(ZIO.attemptBlocking(new FileInputStream(path)).refineToOrDie[FileNotFoundException])(fis =>
+        ZIO.succeed(fis.close())
+      )
   }
 }
 
 object database {
+
+  sealed trait DatabaseConnectionFailure extends Exception
+  object DatabaseConnectionFailure {
+    final case class MaxConnectionsExeeded(max: Int)            extends DatabaseConnectionFailure
+    final case class TimeoutReached(timeout: Duration)          extends DatabaseConnectionFailure
+    final case class TransientSQL(cause: SQLTransientException) extends DatabaseConnectionFailure
+  }
+
   /*
    * EXERCISE
    *
@@ -23,7 +38,7 @@ object database {
    * type of the error should be. You are welcome to create your own error
    * type if you think this is the best solution for the problem.
    */
-  def connectToDatabase(url: String): TODO1[QueryExecutor] = TODO
+  def connectToDatabase(url: String): ZIO[Any, DatabaseConnectionFailure, QueryExecutor] = TODO
 
   trait QueryExecutor {
     import java.sql._
@@ -35,7 +50,7 @@ object database {
      * type of the error should be. You are welcome to create your own error
      * type if you think this is the best solution for the problem.
      */
-    def executeQuery(query: String): TODO1[ResultSet]
+    def executeQuery(query: String): IO[SQLException, ResultSet]
   }
 }
 
@@ -45,6 +60,9 @@ object repo {
   final case class UserId(value: Long)
   final case class User(name: String, id: UserId, email: String)
 
+  sealed trait UserRepoError
+  final case class UserNotFound(userId: UserId) extends UserRepoError
+
   trait UserRepo {
     /*
      * EXERCISE
@@ -53,7 +71,7 @@ object repo {
      * type of the error should be. You are welcome to create your own error
      * type if you think this is the best solution for the problem.
      */
-    def findUserByEmail(email: String): TODO1[User]
+    def findUserByEmail(email: String): IO[Nothing, Option[User]]
 
     /*
      * EXERCISE
@@ -62,7 +80,7 @@ object repo {
      * type of the error should be. You are welcome to create your own error
      * type if you think this is the best solution for the problem.
      */
-    def deleteUser(user: User): TODO1[Unit]
+    def deleteUser(user: User): IO[UserNotFound, Unit]
 
     /*
      * EXERCISE
@@ -71,7 +89,7 @@ object repo {
      * type of the error should be. You are welcome to create your own error
      * type if you think this is the best solution for the problem.
      */
-    def updateExistingUser(user: User): TODO1[Unit]
+    def updateExistingUser(user: User): IO[UserNotFound, Unit]
   }
 
   final case class UserRepoLive(queryExecutor: QueryExecutor) extends UserRepo {
@@ -81,7 +99,11 @@ object repo {
      * Using pseudo-SQL and ignoring SQL injection, implement this function,
      * taking care to handle errors appropriately.
      */
-    def findUserByEmail(email: String): TODO1[User] = TODO
+    def findUserByEmail(email: String): IO[Nothing, Option[User]] =
+      queryExecutor
+        .executeQuery(s"SELECT * FROM users WHERE mail = '$email'")
+        .orDie
+        .map(resultSet => if (resultSet.next()) Some(???) else None)
 
     /*
      * EXERCISE
@@ -89,7 +111,7 @@ object repo {
      * Using pseudo-SQL and ignoring SQL injection, implement this function,
      * taking care to handle errors appropriately.
      */
-    def deleteUser(user: User): TODO1[Unit] = TODO
+    def deleteUser(user: User): IO[UserNotFound, Unit] = TODO
 
     /*
      * EXERCISE
@@ -113,7 +135,7 @@ object route {
    * type of the error should be. You are welcome to create your own error
    * type if you think this is the best solution for the problem.
    */
-  type HttpRouteHandler = PartialFunction[HttpRequest, TODO1[HttpResponse]]
+  type HttpRouteHandler = PartialFunction[HttpRequest, IO[HttpErrorCode, HttpResponse]]
 
   /*
    * EXERCISE
@@ -122,7 +144,7 @@ object route {
    * to embed it into `ZIO` in such a way that whether or not a route is
    * handled can be decided effectfully.
    */
-  type HttpRouteHandler2 = TODO
+  type HttpRouteHandler2 = HttpRequest => IO[Option[HttpErrorCode], HttpResponse]
 }
 
 object payment_processor {

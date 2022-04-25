@@ -20,7 +20,7 @@ object ExposeAll extends ZIOAppDefault {
    * Fix what's wrong with the following function's type signature, and update
    * its implementation to match.
    */
-  def readFile1(path: String): UIO[String] = ZIO.blocking {
+  def readFile1(path: String): IO[IOException, String] = ZIO.blocking {
     ZIO.succeed {
       val source = scala.io.Source.fromFile(path)
 
@@ -70,7 +70,7 @@ object InnerRefinement {
      *
      * Fix this error type.
      */
-    def getUserById(id: Int): IO[Throwable, User] = ???
+    def getUserById(id: Int): UIO[Option[User]] = ???
   }
 
   final case class UserSession(repo: UserRepo) {
@@ -126,28 +126,43 @@ object ErrorHierarchies {
   trait Permission
   trait Resource
 
+  sealed trait DomainError
+  sealed trait AuthError       extends DomainError
+  sealed trait UserError       extends DomainError
+  sealed trait PaymentError    extends DomainError
+  sealed trait CreditCardError extends DomainError
+
   /*
    * EXERCISE
    *
    * Use sealed traits to design an error hierarchy that will automatically
    * broaden errors using subtype unification.
    */
-  final case class AuthenticationError(user: User) extends Exception(s"User ${user} is not authenticated")
+  final case class AuthenticationError(user: User)
+      extends Exception(s"User ${user} is not authenticated")
+      with AuthError
 
   final case class AuthorizationError(user: User, permission: Permission, resource: Resource)
       extends Exception(s"User $user does not have permission $permission on resource $resource")
+      with AuthError
 
-  final case class UserNotFound(email: String) extends Exception(s"User with email $email not found")
+  final case class UserNotFound(email: String) extends Exception(s"User with email $email not found") with UserError
 
-  final case class PaymentDenied(user: User, amount: Double) extends Exception(s"Payment was denied for $user")
+  final case class PaymentDenied(user: User, amount: Double)
+      extends Exception(s"Payment was denied for $user")
+      with PaymentError
 
   final case class CreditCardAddressIncorrect(user: User)
       extends Exception(s"Credit card address for $user is incorrect")
+      with CreditCardError
 
-  final case class CreditCardNumberIncorrect(user: User) extends Exception(s"Credit card number for $user is incorrect")
+  final case class CreditCardNumberIncorrect(user: User)
+      extends Exception(s"Credit card number for $user is incorrect")
+      with CreditCardError
 
   final case class CreditCardExpirationDateIncorrect(user: User)
       extends Exception(s"Credit card expiration date for $user is incorrect")
+      with CreditCardError
 }
 
 /*
